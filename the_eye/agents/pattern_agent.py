@@ -82,7 +82,7 @@ Return a JSON array. Each element must contain exactly these fields:
 - "details": one sentence explaining the specific evidence for this transaction.
 - "confidence": one of "high", "medium", or "low".
 
-Return an empty array [] only if all eight detectors return zero results.
+Return an empty array [] only if all ten detectors return zero results.
 Do not include any text outside the JSON array.
 
 Example of a valid response:
@@ -130,7 +130,7 @@ Example 4 — Salary payment from EMP sender, do not flag
 </FEW_SHOT_EXAMPLES>
 
 <RECAP>
-Call all eight detectors, merge results by transaction_id, assign confidence levels,
+Call all ten detectors, merge results by transaction_id, assign confidence levels,
 and return a single JSON array: transaction_id, signals, details, confidence.
 No text outside the JSON array.
 </RECAP>

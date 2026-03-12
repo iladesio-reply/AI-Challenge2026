@@ -60,13 +60,13 @@ _URGENCY_KW = [
 ]
 
 _PAYMENT_LINK_RE = [
-    r"https?://\S*pay\S*",
-    r"https?://\S*/pay",
-    r"click.{1,30}pay",
-    r"pay.{1,30}link",
-    r"\binvoice\b",
-    r"payment due",
-    r"fattura",
+    r"https?://\S*pay\S*",      # URL containing "pay" — covers fake payment portals
+    r"https?://\S*/pay",        # URL path ending in /pay
+    r"click.{1,30}pay",         # "click here to pay"
+    r"pay.{1,30}link",          # "payment link below"
+    # NOTE: bare "invoice" / "payment due" / "fattura" removed — too common in
+    # legitimate utility and billing emails; they would flag every transaction for
+    # users who receive any kind of bill, bloating detect_urgency_signals output.
 ]
 
 # ── Internal helpers ───────────────────────────────────────────────────────────
