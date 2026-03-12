@@ -17,8 +17,8 @@ os.environ.setdefault("OPENAI_API_BASE", "https://openrouter.ai/api/v1")
 
 # Parse args early so config is set before agents are imported
 parser = argparse.ArgumentParser(description="The Eye - Fraud Detection Agent")
-parser.add_argument("--dataset", default=os.getenv("DATASET_PATH", "data/Brave New World_train/public"))
-parser.add_argument("--output", default=os.getenv("OUTPUT_PATH", "output/predictions.txt"))
+parser.add_argument("--dataset", default=None)
+parser.add_argument("--output", default=None)
 args = parser.parse_args()
 
 # Set global config BEFORE importing agents (tools read from config at call time)
