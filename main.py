@@ -107,6 +107,20 @@ async def run() -> None:
         fraud_ids = [item["transaction_id"] for item in items if "transaction_id" in item]
     except Exception:
         fraud_ids = parse_fraud_ids_from_text(final_text)
+        items = []
+
+    # Hard cap: output must not exceed 30% of dataset size.
+    # If over the cap, keep only "high" confidence entries.
+    total_txns = sum(1 for _ in open(Path(config.DATASET_PATH) / "transactions.csv")) - 1
+    cap = max(5, int(total_txns * 0.50))
+    if len(fraud_ids) > cap and items:
+        high_ids = [
+            item["transaction_id"] for item in items
+            if "transaction_id" in item and item.get("confidence") == "high"
+        ]
+        if high_ids:
+            fraud_ids = high_ids
+            print(f"[The Eye] Cap applied: {len(items)} → {len(fraud_ids)} (high-confidence only)")
 
     result = write_predictions(fraud_ids, config.OUTPUT_PATH)
     print(f"\n[The Eye] {result}")

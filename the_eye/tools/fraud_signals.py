@@ -551,12 +551,29 @@ def detect_phishing_victims() -> str:
             (df["phishing_in_comms"] == True)
             | (df.get("suspicious_domain_in_comms", pd.Series(False, index=df.index)) == True)
         )
+        phishing_rate = mask.mean()
+
+        # If phishing fires on >40% of the dataset every user has been targeted —
+        # tighten to only flag transactions that also show urgency or a payment link,
+        # which indicates active manipulation rather than passive exposure.
+        if phishing_rate > 0.40 and "urgency_keywords_count" in df.columns:
+            tightened_mask = mask & (
+                (df["urgency_keywords_count"] >= 2)
+                | (df.get("payment_link_in_comms", pd.Series(False, index=df.index)) == True)
+                | (df.get("suspicious_domain_in_comms", pd.Series(False, index=df.index)) == True)
+            )
+            mask = tightened_mask
+
         for _, row in df[mask].iterrows():
             signals = []
             if row.get("phishing_in_comms"):
                 signals.append("phishing_keywords")
             if row.get("suspicious_domain_in_comms"):
                 signals.append("suspicious_domain")
+            if row.get("urgency_keywords_count", 0) and row["urgency_keywords_count"] >= 2:
+                signals.append("urgency_keywords")
+            if row.get("payment_link_in_comms"):
+                signals.append("payment_link")
             suspicious.append({
                 "transaction_id": row["transaction_id"],
                 "reason": f"Sender has phishing signals in communications: {', '.join(signals)}",
@@ -665,6 +682,70 @@ def detect_new_recipient_anomalies() -> str:
             "reason": (
                 f"First-ever transfer to new recipient {recipient}; "
                 f"amount {row['amount']:.2f}{ratio_str}"
+            ),
+        })
+
+    return json.dumps(suspicious, indent=2)
+
+
+# ── Detector 11 ───────────────────────────────────────────────────────────────
+
+def detect_social_engineering_transfers() -> str:
+    """Detect transfers where the sender has phishing exposure AND the description
+    suggests a staged legitimate payment (rent, tax, fee) — a Mirror Hacker tactic
+    where victims are socially engineered into paying a fraudulent account disguised
+    as a landlord, property manager, or service provider.
+
+    This pattern is specifically designed to evade whitelist rules that treat
+    'Rent payment' or 'Utility' descriptions as legitimacy signals.  When phishing
+    is present, these descriptions should be treated as social engineering cover.
+
+    Uses precomputed phishing_in_comms, payment_link_in_comms, urgency_keywords_count.
+
+    Returns:
+        JSON array. Each element:
+        - "transaction_id": UUID of the flagged transaction
+        - "reason": description of the social engineering pattern
+
+        Returns [] if no social engineering transfers found.
+
+    When to call: always call — this detector catches a specific Mirror Hacker tactic
+    that bypasses standard legitimacy whitelists.
+    """
+    df = _load_enriched()
+    suspicious = []
+
+    if "phishing_in_comms" not in df.columns:
+        return json.dumps([], indent=2)
+
+    phishing_mask = (
+        (df["phishing_in_comms"] == True)
+        | (df.get("payment_link_in_comms", pd.Series(False, index=df.index)) == True)
+    )
+
+    # Staged-legitimacy description patterns used by Mirror Hacker
+    if "description" not in df.columns:
+        return json.dumps([], indent=2)
+
+    desc = df["description"].fillna("").str.lower()
+    staged_desc_mask = desc.str.contains(
+        r"rent\s+payment|affitto|miete|loyer|property\s+tax|annual\s+(?:fee|tax|payment)|"
+        r"invoice|fattura|bolletta",
+        regex=True,
+    )
+
+    social_eng_mask = (
+        phishing_mask
+        & staged_desc_mask
+        & (df["transaction_type"] == "transfer")
+    )
+
+    for _, row in df[social_eng_mask].iterrows():
+        suspicious.append({
+            "transaction_id": row["transaction_id"],
+            "reason": (
+                f"Transfer with staged-legitimacy description ('{str(row.get('description', ''))[:60]}') "
+                f"by a phishing-exposed sender — possible social engineering to a fake landlord/service account"
             ),
         })
 
@@ -899,6 +980,13 @@ def detect_iban_country_anomalies() -> str:
     suspicious = []
 
     if "iban_country_mismatch" not in df.columns:
+        return json.dumps([], indent=2)
+
+    # If IBAN mismatch fires on >50% of the dataset it is a baseline characteristic
+    # of this dataset (e.g. a cross-border payment platform), not a fraud discriminator.
+    # Return [] so it does not pollute the signal merge in pattern_agent.
+    mismatch_rate = df["iban_country_mismatch"].mean()
+    if mismatch_rate > 0.50:
         return json.dumps([], indent=2)
 
     for _, row in df[df["iban_country_mismatch"] == True].iterrows():

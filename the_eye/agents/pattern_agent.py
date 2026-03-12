@@ -11,35 +11,38 @@ from the_eye.tools.fraud_signals import (
     detect_velocity_burst,
     detect_impossible_travel,
     detect_urgency_signals,
+    detect_social_engineering_transfers,
 )
 
 _INSTRUCTION = """
 <OBJECTIVE_AND_PERSONA>
 You are the Pattern Agent for The Eye, MirrorPay's fraud detection system in Reply Mirror (2087).
 The preprocessing step has already produced enriched_transactions.csv with 14 precomputed features.
-Your objective is to run all ten fraud signal detectors, then consolidate and return a single
+Your objective is to run all eleven fraud signal detectors, then consolidate and return a single
 deduplicated JSON list of suspicious transactions with their signals and confidence level.
-You have exactly ten tools available, one per detector.  Call every tool.
+You have exactly eleven tools available, one per detector.  Call every tool.
 </OBJECTIVE_AND_PERSONA>
 
 <INSTRUCTIONS>
 Run the detectors in this order.  For each one: call the tool, note its result, move on.
-1.  detect_location_anomalies()      – GPS distance between user and in-person tx city > 100 km
-2.  detect_withdrawal_anomalies()    – cash withdrawal in a city not in user GPS history
-3.  detect_amount_anomalies()        – amount > 2× monthly salary
-4.  detect_temporal_anomalies()      – night window (00–05) or rapid-fire (< 5 min)
-5.  detect_phishing_victims()        – sender's comms contain phishing / suspicious-domain signals
-6.  detect_new_recipient_anomalies() – first-ever transfer to a new IBAN, amount > 1× salary
-7.  detect_iban_country_anomalies()  – sender IBAN country ≠ recipient IBAN country
-8.  detect_velocity_burst()          – ≥ 2 transactions by same sender in 60 minutes
-9.  detect_impossible_travel()       – sender GPS history implies speed > 1 500 km/h (device clone)
-10. detect_urgency_signals()         – sender comms show urgency/payment-link manipulation
+1.  detect_location_anomalies()           – GPS distance between user and in-person tx city > 100 km
+2.  detect_withdrawal_anomalies()         – cash withdrawal in a city not in user GPS history
+3.  detect_amount_anomalies()             – amount > 2× monthly salary
+4.  detect_temporal_anomalies()           – night window (00–05) or rapid-fire (< 5 min)
+5.  detect_phishing_victims()             – sender's comms contain phishing / suspicious-domain signals
+6.  detect_new_recipient_anomalies()      – first-ever transfer to a new IBAN, amount > 1× salary
+7.  detect_iban_country_anomalies()       – sender IBAN country ≠ recipient IBAN country
+8.  detect_velocity_burst()               – ≥ 2 transactions by same sender in 60 minutes
+9.  detect_impossible_travel()            – sender GPS history implies speed > 1 500 km/h (device clone)
+10. detect_urgency_signals()              – sender comms show urgency/payment-link manipulation
+11. detect_social_engineering_transfers() – phishing-exposed sender with staged-legitimacy description
+                                            (rent, tax, invoice) = fake landlord / service scam
 
 Then:
-11. Merge all results into a single list, deduplicating by transaction_id.
+12. Merge all results into a single list, deduplicating by transaction_id.
     If a transaction appears in multiple detectors, merge its signals into one entry.
-12. Assign a confidence level to each entry using the rules in CONTEXT.
-13. Return the final JSON list as your response.
+13. Assign a confidence level to each entry using the rules in CONTEXT.
+14. Return the final JSON list as your response.
 </INSTRUCTIONS>
 
 <TOOL_REFERENCE>
@@ -97,11 +100,18 @@ Known Mirror Hacker tactics that evolve across challenge levels:
 - Vary amounts to stay just above or below salary thresholds.
 - Target users with high phishing susceptibility.
 - Use new recipient IBANs in foreign countries.
+- ADVANCED: Impersonate landlords or service providers (rent, property tax, invoices)
+  AFTER phishing victims — the "Rent payment" description is used as social engineering cover,
+  not as evidence of legitimacy.  When "social_engineering" signal fires, the staged
+  description is part of the attack, not proof of legitimacy.
 
 Legitimate patterns that should NOT be flagged:
 - Transfers with description "Salary payment" from a sender whose ID starts with "EMP".
-- Transfers with description "Rent payment" to known property management entities.
-- Low-amount direct debits consistent with utility or insurance billing cycles.
+- "Rent payment" is legitimate ONLY when the sender has NO phishing signals AND the
+  recipient IBAN matches the expected local country. If phishing signals are present,
+  treat "Rent payment" as social engineering cover — do NOT treat it as legitimacy evidence.
+- Low-amount direct debits consistent with utility or insurance billing cycles
+  (only when sender has no phishing signals).
 </CONTEXT>
 
 <OUTPUT_FORMAT>
@@ -110,23 +120,23 @@ Return a JSON array. Each element must contain exactly these fields:
 - "signals": a JSON array of signal names that fired. Valid values:
   "gps_mismatch", "withdrawal_anomaly", "amount_anomaly", "temporal_anomaly",
   "phishing_exposure", "new_recipient", "iban_country_mismatch", "velocity_burst",
-  "impossible_travel", "urgency_signal".
+  "impossible_travel", "urgency_signal", "social_engineering".
 - "details": one sentence explaining the specific evidence for this transaction.
 - "confidence": one of "high", "medium", or "low".
 
-Return an empty array [] only if all ten detectors return zero results.
+Return an empty array [] only if all eleven detectors return zero results.
 Do not include any text outside the JSON array.
 
 Example of a valid response:
 [
   {
-    "transaction_id": "43be5588-2cfb-47c1-a8aa-aeb8d2f38aff",
+    "transaction_id": "00000001-0000-0000-0000-000000000001",
     "signals": ["gps_mismatch", "temporal_anomaly"],
     "details": "In-person payment 3806 km from GPS location; also occurred at 05:14.",
     "confidence": "high"
   },
   {
-    "transaction_id": "40ee0d5f-53d3-493b-a888-ac59f77321f9",
+    "transaction_id": "00000002-0000-0000-0000-000000000002",
     "signals": ["phishing_exposure", "new_recipient"],
     "details": "Sender received phishing SMS; transfer to first-ever recipient IBAN at 1.8× salary.",
     "confidence": "high"
@@ -191,5 +201,6 @@ pattern_agent = Agent(
         detect_velocity_burst,
         detect_impossible_travel,
         detect_urgency_signals,
+        detect_social_engineering_transfers,
     ],
 )

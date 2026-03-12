@@ -28,13 +28,13 @@ To complete the task, follow these steps:
 You will receive the full reflection_agent JSON array in the message body.  It looks like:
 [
   {
-    "transaction_id": "43be5588-2cfb-47c1-a8aa-aeb8d2f38aff",
+    "transaction_id": "00000001-0000-0000-0000-000000000001",
     "signals": ["gps_mismatch", "temporal_anomaly"],
     "details": "In-person payment 3806 km from GPS location; also occurred at 05:14.",
     "confidence": "high"
   },
   {
-    "transaction_id": "ae4125db-5912-45e7-b13e-a3a33609ddf1",
+    "transaction_id": "00000003-0000-0000-0000-000000000003",
     "signals": ["amount_anomaly"],
     "details": "Amount 939.42 is 3.1× monthly salary. Rent payment Jan.",
     "confidence": "medium",
@@ -52,18 +52,28 @@ Asymmetric cost model for MirrorPay:
 - When evidence is ambiguous, prefer including the transaction over dropping it.
 
 Decision rules by confidence level:
-- "high" confidence → always include in the final list.
-- "medium" confidence → include unless at least one legitimacy signal is present.
-- "low" confidence → drop unless a second independent signal corroborates it.
+- "high" confidence → always include UNLESS at least two independent legitimacy signals are present.
+- "medium" confidence → include ONLY IF no legitimacy signal is present AND signals include at least
+  one of: gps_mismatch, withdrawal_anomaly, amount_anomaly, phishing_exposure, new_recipient,
+  impossible_travel, or urgency_signal. Drop medium if the only signals are iban_country_mismatch
+  and/or velocity_burst and/or temporal_anomaly.
+- "low" confidence → ALWAYS DROP. Never include low-confidence entries in the final list.
 
-Legitimacy signals that justify dropping a "medium" or "low" transaction:
-- The transaction description contains "Salary payment", "Rent payment", "Utility", or "Insurance".
+Legitimacy signals that justify dropping a transaction:
 - The sender_id starts with "EMP" (MirrorPay employer payroll system identifier).
-- The transaction is a low-amount direct debit consistent with a known recurring service.
-- The entry has "legitimacy_flag": true (set by reflection_agent — treat as a strong hint to drop).
+- The description contains "Salary payment" from an EMP sender.
+- Low-amount direct debit (< 100) consistent with utility/insurance, AND entry has no phishing signals.
+- The entry has "legitimacy_flag": true AND no signals beyond iban_country_mismatch.
 
-Note: "legitimacy_flag": true alone is NOT sufficient to drop a "high" confidence entry.
-For "high" confidence, you need two or more legitimacy signals before dropping.
+CRITICAL OVERRIDE — do NOT treat "Rent payment" as legitimacy if the entry has:
+"phishing_exposure", "urgency_signal", or "social_engineering" in its signals list.
+The Mirror Hacker impersonates landlords after phishing victims — "Rent payment" is their cover.
+
+Hard cap rule:
+- If the resulting list would exceed 25% of the total transactions in the dataset, keep only
+  the "high" confidence entries. The total number of transactions is approximately the number
+  of entries in the input list divided by 0.8 (rough estimate).
+  When in doubt, be conservative — a precise smaller list scores better than a noisy large one.
 
 Challenge output validity constraints (enforced by the scoring system):
 - The output list must not be empty.
@@ -81,38 +91,38 @@ Do not include any text, explanation, or markdown outside the JSON array.
 
 Example of a valid response:
 [
-  {"transaction_id": "43be5588-2cfb-47c1-a8aa-aeb8d2f38aff", "signals": ["gps_mismatch"], "confidence": "high"},
-  {"transaction_id": "40ee0d5f-53d3-493b-a888-ac59f77321f9", "signals": ["temporal_anomaly"], "confidence": "medium"}
+  {"transaction_id": "00000001-0000-0000-0000-000000000001", "signals": ["gps_mismatch"], "confidence": "high"},
+  {"transaction_id": "00000002-0000-0000-0000-000000000002", "signals": ["temporal_anomaly"], "confidence": "medium"}
 ]
 </OUTPUT_FORMAT>
 
 <FEW_SHOT_EXAMPLES>
 Example 1 — High confidence GPS mismatch, include
-Input: {"transaction_id": "43be5588-2cfb-47c1-a8aa-aeb8d2f38aff", "signals": ["gps_mismatch"], "details": "3806km GPS gap.", "confidence": "high"}
+Input: {"transaction_id": "00000001-0000-0000-0000-000000000001", "signals": ["gps_mismatch"], "details": "3806km GPS gap.", "confidence": "high"}
 Thoughts: Confidence is "high". No legitimacy signals. Include.
-Output entry: {"transaction_id": "43be5588-2cfb-47c1-a8aa-aeb8d2f38aff", "signals": ["gps_mismatch"], "confidence": "high"}
+Output entry: {"transaction_id": "00000001-0000-0000-0000-000000000001", "signals": ["gps_mismatch"], "confidence": "high"}
 
 Example 2 — Medium temporal anomaly, no legitimacy signal, include
-Input: {"transaction_id": "40ee0d5f-53d3-493b-a888-ac59f77321f9", "signals": ["temporal_anomaly"], "details": "Direct debit at 03:48.", "confidence": "medium"}
+Input: {"transaction_id": "00000002-0000-0000-0000-000000000002", "signals": ["temporal_anomaly"], "details": "Direct debit at 03:48.", "confidence": "medium"}
 Thoughts: Confidence is "medium". Description is empty — no legitimacy signal present. Include.
-Output entry: {"transaction_id": "40ee0d5f-53d3-493b-a888-ac59f77321f9", "signals": ["temporal_anomaly"], "confidence": "medium"}
+Output entry: {"transaction_id": "00000002-0000-0000-0000-000000000002", "signals": ["temporal_anomaly"], "confidence": "medium"}
 
 Example 3 — Medium amount anomaly with rent description, drop
-Input: {"transaction_id": "ae4125db-5912-45e7-b13e-a3a33609ddf1", "signals": ["amount_anomaly"], "details": "Amount 939.42 is 3.1x salary.", "confidence": "medium"}
+Input: {"transaction_id": "00000003-0000-0000-0000-000000000003", "signals": ["amount_anomaly"], "details": "Amount 939.42 is 3.1x salary.", "confidence": "medium"}
 Thoughts: Confidence is "medium". Transaction description is "Rent payment Jan - Property Management Duisburg".
   Legitimacy signal present ("Rent payment"). Drop.
 Output entry: (not included)
 
 Example 4 — Low confidence salary from EMP sender, drop
-Input: {"transaction_id": "ea1e6dd4-5926-4352-b75e-5a5192bd201e", "signals": ["temporal_anomaly"], "details": "Transaction at 05:50.", "confidence": "low"}
+Input: {"transaction_id": "00000004-0000-0000-0000-000000000004", "signals": ["temporal_anomaly"], "details": "Transaction at 05:50.", "confidence": "low"}
 Thoughts: Confidence is "low". Sender is "EMP93032" and description is "Salary payment Jan".
   Two legitimacy signals (EMP sender + salary description). Drop.
 Output entry: (not included)
 
 Example 5 — High confidence multiple signals, include
-Input: {"transaction_id": "4a92ab00-8a27-4623-ab1d-56ac85fcd6b0", "signals": ["temporal_anomaly", "phishing_exposure"], "details": "Midnight e-commerce by phishing victim.", "confidence": "high"}
+Input: {"transaction_id": "00000005-0000-0000-0000-000000000005", "signals": ["temporal_anomaly", "phishing_exposure"], "details": "Midnight e-commerce by phishing victim.", "confidence": "high"}
 Thoughts: Confidence is "high". Two independent signals. No legitimacy signals. Include.
-Output entry: {"transaction_id": "4a92ab00-8a27-4623-ab1d-56ac85fcd6b0", "signals": ["temporal_anomaly", "phishing_exposure"], "confidence": "high"}
+Output entry: {"transaction_id": "00000005-0000-0000-0000-000000000005", "signals": ["temporal_anomaly", "phishing_exposure"], "confidence": "high"}
 </FEW_SHOT_EXAMPLES>
 
 <RECAP>

@@ -54,7 +54,7 @@ Return the corrected JSON array as your final response.
 You will receive the full pattern_agent JSON array in the message body.  It looks like:
 [
   {
-    "transaction_id": "43be5588-2cfb-47c1-a8aa-aeb8d2f38aff",
+    "transaction_id": "00000001-0000-0000-0000-000000000001",
     "signals": ["gps_mismatch", "temporal_anomaly"],
     "details": "In-person payment 3806 km from GPS location; also occurred at 05:14.",
     "confidence": "low"
@@ -93,13 +93,13 @@ Do not add prose, explanations, or markdown fences. Output the JSON array only.
 Example of a valid response:
 [
   {
-    "transaction_id": "43be5588-2cfb-47c1-a8aa-aeb8d2f38aff",
+    "transaction_id": "00000001-0000-0000-0000-000000000001",
     "signals": ["gps_mismatch", "temporal_anomaly"],
     "details": "In-person payment 8823 km from GPS; also at 02:15.",
     "confidence": "high"
   },
   {
-    "transaction_id": "def12345-0000-0000-0000-000000000000",
+    "transaction_id": "00000003-0000-0000-0000-000000000003",
     "signals": ["amount_anomaly"],
     "details": "Amount 3.2× salary. Description: Salary payment Jan.",
     "confidence": "medium",

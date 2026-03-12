@@ -134,8 +134,8 @@ No text before or after the array.
 
 Example of a valid final response:
 [
-  {"transaction_id": "43be5588-2cfb-47c1-a8aa-aeb8d2f38aff", "signals": ["gps_mismatch"], "confidence": "high"},
-  {"transaction_id": "40ee0d5f-53d3-493b-a888-ac59f77321f9", "signals": ["temporal_anomaly", "phishing_exposure"], "confidence": "high"}
+  {"transaction_id": "00000001-0000-0000-0000-000000000001", "signals": ["gps_mismatch"], "confidence": "high"},
+  {"transaction_id": "00000002-0000-0000-0000-000000000002", "signals": ["temporal_anomaly", "phishing_exposure"], "confidence": "high"}
 ]
 </OUTPUT_FORMAT>
 
