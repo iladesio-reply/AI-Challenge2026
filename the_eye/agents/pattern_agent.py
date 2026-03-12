@@ -9,6 +9,8 @@ from the_eye.tools.fraud_signals import (
     detect_new_recipient_anomalies,
     detect_iban_country_anomalies,
     detect_velocity_burst,
+    detect_impossible_travel,
+    detect_urgency_signals,
 )
 
 _INSTRUCTION = """
@@ -21,20 +23,22 @@ deduplicated JSON list of suspicious transactions with their signals and confide
 
 <INSTRUCTIONS>
 Run the detectors in this order:
-1. detect_location_anomalies()      – GPS distance between user and in-person tx city > 100 km
-2. detect_withdrawal_anomalies()    – cash withdrawal in a city not in user GPS history
-3. detect_amount_anomalies()        – amount > 2× monthly salary
-4. detect_temporal_anomalies()      – night window (00–05) or rapid-fire (< 5 min)
-5. detect_phishing_victims()        – sender's comms contain phishing / suspicious-domain signals
-6. detect_new_recipient_anomalies() – first-ever transfer to a new IBAN, amount > 1× salary
-7. detect_iban_country_anomalies()  – sender IBAN country ≠ recipient IBAN country
-8. detect_velocity_burst()          – ≥ 2 transactions by same sender in 60 minutes
+1.  detect_location_anomalies()      – GPS distance between user and in-person tx city > 100 km
+2.  detect_withdrawal_anomalies()    – cash withdrawal in a city not in user GPS history
+3.  detect_amount_anomalies()        – amount > 2× monthly salary
+4.  detect_temporal_anomalies()      – night window (00–05) or rapid-fire (< 5 min)
+5.  detect_phishing_victims()        – sender's comms contain phishing / suspicious-domain signals
+6.  detect_new_recipient_anomalies() – first-ever transfer to a new IBAN, amount > 1× salary
+7.  detect_iban_country_anomalies()  – sender IBAN country ≠ recipient IBAN country
+8.  detect_velocity_burst()          – ≥ 2 transactions by same sender in 60 minutes
+9.  detect_impossible_travel()       – sender GPS history implies speed > 1 500 km/h (device clone)
+10. detect_urgency_signals()         – sender comms show urgency/payment-link manipulation
 
 Then:
-9. Merge all results into a single list, deduplicating by transaction_id.
-   If a transaction appears in multiple detectors, merge its signals into one entry.
-10. Assign a confidence level to each entry using the rules in CONTEXT.
-11. Return the final JSON list as your response.
+11. Merge all results into a single list, deduplicating by transaction_id.
+    If a transaction appears in multiple detectors, merge its signals into one entry.
+12. Assign a confidence level to each entry using the rules in CONTEXT.
+13. Return the final JSON list as your response.
 </INSTRUCTIONS>
 
 <CONTEXT>
@@ -45,6 +49,15 @@ Confidence level rules:
             new-recipient with amount > 2× salary, or phishing alone).
 - "low":    a single weak signal with no corroboration
             (IBAN mismatch alone, velocity burst alone, small new-recipient amount).
+
+Confidence level rules apply to the 10 signals:
+- "gps_mismatch", "withdrawal_anomaly", "amount_anomaly", "temporal_anomaly",
+  "phishing_exposure", "new_recipient", "iban_country_mismatch", "velocity_burst",
+  "impossible_travel", "urgency_signal"
+
+Special overrides:
+- "impossible_travel" alone → always "high" (biotag cloning is definitive evidence).
+- "phishing_exposure" + "urgency_signal" together → upgrade to "high" (compound social engineering).
 
 Known Mirror Hacker tactics that evolve across challenge levels:
 - Shift transaction types over time (e.g. e-commerce → in-person → withdrawal).
@@ -64,7 +77,8 @@ Return a JSON array. Each element must contain exactly these fields:
 - "transaction_id": the UUID string of the suspicious transaction.
 - "signals": a JSON array of signal names that fired. Valid values:
   "gps_mismatch", "withdrawal_anomaly", "amount_anomaly", "temporal_anomaly",
-  "phishing_exposure", "new_recipient", "iban_country_mismatch", "velocity_burst".
+  "phishing_exposure", "new_recipient", "iban_country_mismatch", "velocity_burst",
+  "impossible_travel", "urgency_signal".
 - "details": one sentence explaining the specific evidence for this transaction.
 - "confidence": one of "high", "medium", or "low".
 
@@ -124,7 +138,7 @@ No text outside the JSON array.
 
 pattern_agent = Agent(
     name="pattern_agent",
-    model=LiteLlm(model="openai/gpt-4o-mini"),
+    model=LiteLlm(model="openai/gpt-5.4"),
     description=(
         "Runs all eight fraud signal detectors on the enriched dataset "
         "(GPS mismatch, withdrawal anomaly, amount anomaly, temporal anomaly, "
@@ -142,5 +156,7 @@ pattern_agent = Agent(
         detect_new_recipient_anomalies,
         detect_iban_country_anomalies,
         detect_velocity_burst,
+        detect_impossible_travel,
+        detect_urgency_signals,
     ],
 )

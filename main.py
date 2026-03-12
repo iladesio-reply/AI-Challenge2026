@@ -7,6 +7,7 @@ The dataset is cloned there and all outputs (enriched CSV, predictions) live in 
 """
 import asyncio
 import argparse
+import logging
 import os
 import shutil
 import warnings
@@ -14,6 +15,11 @@ from datetime import datetime
 from pathlib import Path
 
 warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
+
+# Suppress OpenTelemetry OTLP export timeout noise — ADK sends traces to
+# challenges.reply.com which can time out; this does not affect our output.
+logging.getLogger("opentelemetry").setLevel(logging.CRITICAL)
+logging.getLogger("opentelemetry.sdk").setLevel(logging.CRITICAL)
 from dotenv import load_dotenv
 
 load_dotenv()

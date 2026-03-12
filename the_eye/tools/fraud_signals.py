@@ -419,6 +419,90 @@ def detect_new_recipient_anomalies() -> str:
     return json.dumps(suspicious, indent=2)
 
 
+# ── Detector 9 ────────────────────────────────────────────────────────────────
+
+def detect_impossible_travel() -> str:
+    """Detect transactions from senders whose GPS history implies speed > 1 500 km/h.
+
+    Uses the precomputed has_impossible_travel column from enriched_transactions.csv.
+    A biotag that "teleports" between cities within minutes cannot be the same physical
+    device — it indicates GPS-clone or device-takeover fraud.
+
+    Returns:
+        JSON array. Each element:
+        - "transaction_id": UUID of the flagged transaction
+        - "reason": description of impossible travel detected for this sender
+
+        Returns [] if no impossible travel found.
+
+    When to call: always call — impossible travel alone is high-confidence evidence
+    of device cloning or GPS spoofing, one of the Mirror Hacker's known tactics.
+    """
+    df = _load_enriched()
+    suspicious = []
+
+    if "has_impossible_travel" not in df.columns:
+        return json.dumps([], indent=2)
+
+    flagged = df[df["has_impossible_travel"] == True]
+    for _, row in flagged.iterrows():
+        suspicious.append({
+            "transaction_id": row["transaction_id"],
+            "reason": (
+                "Sender GPS history contains impossible travel (speed > 1 500 km/h) — "
+                "likely biotag clone or device takeover"
+            ),
+        })
+
+    return json.dumps(suspicious, indent=2)
+
+
+# ── Detector 10 ───────────────────────────────────────────────────────────────
+
+def detect_urgency_signals() -> str:
+    """Detect transactions from senders whose communications show social-engineering manipulation.
+
+    Uses the precomputed urgency_keywords_count and payment_link_in_comms columns.
+    Flags senders with ≥ 2 urgency keywords OR a payment/invoice link in their comms —
+    both are strong indicators of an active vishing/smishing campaign against the user.
+
+    Returns:
+        JSON array. Each element:
+        - "transaction_id": UUID of the flagged transaction
+        - "reason": which social-engineering signals were found
+
+        Returns [] if no urgency signals found.
+
+    When to call: always call — combine with phishing_exposure or new_recipient for
+    high-confidence compound signals.
+    """
+    df = _load_enriched()
+    suspicious = []
+
+    if "urgency_keywords_count" not in df.columns and "payment_link_in_comms" not in df.columns:
+        return json.dumps([], indent=2)
+
+    mask = pd.Series(False, index=df.index)
+    if "urgency_keywords_count" in df.columns:
+        mask = mask | (df["urgency_keywords_count"] >= 2)
+    if "payment_link_in_comms" in df.columns:
+        mask = mask | (df["payment_link_in_comms"] == True)
+
+    for _, row in df[mask].iterrows():
+        parts = []
+        urgency_count = int(row.get("urgency_keywords_count", 0) or 0)
+        if urgency_count >= 2:
+            parts.append(f"urgency_keywords ({urgency_count})")
+        if row.get("payment_link_in_comms", False):
+            parts.append("payment_link")
+        suspicious.append({
+            "transaction_id": row["transaction_id"],
+            "reason": f"Social engineering signals in sender comms: {', '.join(parts)}",
+        })
+
+    return json.dumps(suspicious, indent=2)
+
+
 # ── Detector 7 (NEW) ──────────────────────────────────────────────────────────
 
 def detect_iban_country_anomalies() -> str:

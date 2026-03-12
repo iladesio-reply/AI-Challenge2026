@@ -68,7 +68,7 @@ Call the appropriate tool, return its output verbatim. Never fabricate data valu
 
 data_agent = Agent(
     name="data_agent",
-    model=LiteLlm(model="openai/gpt-4o-mini"),
+    model=LiteLlm(model="openai/gpt-5.4"),
     description=(
         "Provides on-demand access to the MirrorPay dataset: transaction statistics, "
         "user profiles (salary, residence, phishing susceptibility), GPS biotag location history, "

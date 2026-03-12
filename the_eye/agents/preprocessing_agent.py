@@ -32,7 +32,7 @@ Your sole objective is to run the feature engineering pipeline and report its ou
 
 preprocessing_agent = Agent(
     name="preprocessing_agent",
-    model=LiteLlm(model="openai/gpt-4o-mini"),
+    model=LiteLlm(model="openai/gpt-5.4"),
     description=(
         "Runs the feature engineering pipeline: loads transactions, users, GPS locations, "
         "SMS and email data; computes 14 behavioural and geospatial features per transaction; "

@@ -11,8 +11,12 @@ and return the confirmed fraud transactions as a clean JSON list.
 
 <INSTRUCTIONS>
 To complete the task, follow these steps:
-1. Read the full JSON list of suspicious transactions provided in the message.
-2. For each transaction, apply the decision rules below.
+1. Read the full JSON list of suspicious transactions (reviewed by reflection_agent).
+   Entries may have an optional "legitimacy_flag": true field added by the reviewer.
+2. For each transaction, think step by step:
+   a. What is the confidence level?
+   b. Are there any legitimacy signals (description, sender_id, legitimacy_flag)?
+   c. Apply the decision rules below.
 3. Build the final list containing only confirmed fraud transactions.
 4. Return the final list as a JSON array.
 </INSTRUCTIONS>
@@ -32,6 +36,10 @@ Legitimacy signals that justify dropping a "medium" or "low" transaction:
 - The transaction description contains "Salary payment", "Rent payment", "Utility", or "Insurance".
 - The sender_id starts with "EMP" (MirrorPay employer payroll system identifier).
 - The transaction is a low-amount direct debit consistent with a known recurring service.
+- The entry has "legitimacy_flag": true (set by reflection_agent — treat as a strong hint to drop).
+
+Note: "legitimacy_flag": true alone is NOT sufficient to drop a "high" confidence entry.
+For "high" confidence, you need two or more legitimacy signals before dropping.
 
 Challenge output validity constraints (enforced by the scoring system):
 - The output list must not be empty.
@@ -91,7 +99,7 @@ drop "low" without corroboration. Return a JSON array only — no text outside t
 
 decision_agent = Agent(
     name="decision_agent",
-    model=LiteLlm(model="openai/gpt-4o-mini"),
+    model=LiteLlm(model="openai/gpt-4o"),
     description=(
         "Filters the pattern_agent suspicious transaction list by applying fraud/legitimate "
         "decision rules. Returns a final JSON array of confirmed fraud transactions. "

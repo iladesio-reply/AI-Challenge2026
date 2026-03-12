@@ -12,6 +12,7 @@ from google.adk.models.lite_llm import LiteLlm
 from the_eye.agents.preprocessing_agent import preprocessing_agent
 from the_eye.agents.data_agent import data_agent
 from the_eye.agents.pattern_agent import pattern_agent
+from the_eye.agents.reflection_agent import reflection_agent
 from the_eye.agents.decision_agent import decision_agent
 
 # ── Step 2: fraud detection orchestrator ──────────────────────────────────────
@@ -26,39 +27,49 @@ the fraud detection pipeline and return the final confirmed fraud list.
 
 <INSTRUCTIONS>
 Follow these steps in order without asking the user for input:
+
 1. Delegate to pattern_agent with the message:
-   "Run all fraud detectors on the enriched dataset and return the consolidated JSON list."
-2. Take the complete JSON output from pattern_agent and delegate to decision_agent with:
-   "Filter this suspicious transaction list and return only confirmed fraud as a JSON array: <paste full pattern_agent output here>"
-3. Return the complete JSON array from decision_agent as your final response, with no modifications.
+   "Run all 10 fraud detectors on the enriched dataset and return the consolidated JSON list."
+
+2. Take the COMPLETE JSON output from pattern_agent and delegate to reflection_agent with:
+   "Review this suspicious transaction list for confidence errors and legitimacy flags, then return the corrected JSON array: <paste full pattern_agent JSON here>"
+
+3. Take the COMPLETE JSON output from reflection_agent and delegate to decision_agent with:
+   "Filter this reviewed suspicious transaction list and return only confirmed fraud as a JSON array: <paste full reflection_agent JSON here>"
+
+4. Return the complete JSON array from decision_agent as your final response, with no modifications.
 </INSTRUCTIONS>
 
 <CONTEXT>
 Agent responsibilities:
-- pattern_agent: runs all fraud detectors (location anomaly, withdrawal anomaly, amount
+- pattern_agent: runs all 10 fraud detectors (location anomaly, withdrawal anomaly, amount
   anomaly, temporal anomaly, phishing victims, new-recipient anomaly, IBAN-country anomaly,
-  velocity burst).  Each detector reads from enriched_transactions.csv and uses precomputed
-  features (gps_distance_to_tx_km, amount_vs_salary_ratio, phishing_in_comms, etc.).
-  Returns a JSON list with signals and confidence.
-- decision_agent: filters that list by applying fraud/legitimate rules.
-  Returns a JSON array of confirmed fraud transactions.
+  velocity burst, impossible travel, urgency signals). Each detector reads from
+  enriched_transactions.csv using precomputed features. Returns a JSON list with signals
+  and confidence levels.
+- reflection_agent: reviews pattern_agent output for systematic errors. Upgrades
+  under-estimated confidence levels (e.g. two signals but "low" → "high"), flags entries
+  with legitimacy signals ("legitimacy_flag": true), and deduplicates. Does NOT remove entries.
+- decision_agent: applies final fraud/legitimate rules on the reflection-corrected list.
+  Returns a clean JSON array of confirmed fraud transactions.
 - data_agent: provides on-demand access to raw dataset files. Delegate here only if an agent
   needs to inspect a specific user profile, location history, or communication beyond
   what the enriched CSV provides.
 
 The final JSON array returned by decision_agent will be parsed by the system to write
-the output file.  It must be valid JSON and must contain transaction_id fields.
+the output file. It must be valid JSON and must contain transaction_id fields.
 </CONTEXT>
 
 <CONSTRAINTS>
 Dos:
-- Pass the complete, unmodified JSON from pattern_agent to decision_agent.
-- Return the complete, unmodified JSON from decision_agent as your final response.
+- Pass the complete, unmodified JSON between each pipeline stage.
 - Execute all steps automatically, without waiting for user confirmation between steps.
+- Return the complete, unmodified JSON from decision_agent as your final response.
 
 Don'ts:
 - Do not truncate, summarize, or reformat the JSON at any point in the pipeline.
 - Do not add prose, headers, or markdown fences around the final JSON response.
+- Do not skip the reflection_agent step — it corrects systematic confidence errors.
 - Do not ask the user for clarification or additional input.
 </CONSTRAINTS>
 
@@ -74,14 +85,14 @@ Example of a valid final response:
 </OUTPUT_FORMAT>
 
 <RECAP>
-Delegate to pattern_agent → pass its full output to decision_agent → return
-decision_agent's JSON array unchanged as your final response.
+pipeline: pattern_agent → reflection_agent → decision_agent.
+Pass full JSON through each stage unchanged. Return decision_agent's final array only.
 </RECAP>
 """
 
 orchestrator_agent = Agent(
     name="the_eye_orchestrator",
-    model=LiteLlm(model="openai/gpt-4o-mini"),
+    model=LiteLlm(model="openai/gpt-5.4"),
     description=(
         "Fraud detection coordinator. Orchestrates the pipeline: pattern_agent detects "
         "signals using precomputed enriched features, decision_agent filters false positives. "
@@ -89,7 +100,7 @@ orchestrator_agent = Agent(
     ),
     instruction=_ORCHESTRATOR_INSTRUCTION,
     tools=[],
-    sub_agents=[data_agent, pattern_agent, decision_agent],
+    sub_agents=[data_agent, pattern_agent, reflection_agent, decision_agent],
 )
 
 # ── Root agent: deterministic sequential pipeline ─────────────────────────────

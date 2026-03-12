@@ -7,3 +7,5 @@ output/*.txt
 *.egg-info/
 .venv/
 venv/
+
+workdir/
