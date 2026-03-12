@@ -101,16 +101,121 @@ def _city_from_location(location_str: str) -> str:
 def run_feature_engineering() -> str:
     """Compute 14 fraud-detection features per transaction and save enriched_transactions.csv.
 
-    Reads the raw dataset from config.DATASET_PATH and writes the enriched CSV to
-    config.WORKDIR_PATH/enriched_transactions.csv.  All downstream fraud detectors
-    automatically prefer the enriched CSV when it exists.
+    This is the sole entry point for the preprocessing pipeline.  It must be called exactly
+    once at the start of every pipeline run, before any fraud-detector tools are invoked.
+    All ten fraud-signal detectors in fraud_signals.py automatically prefer the enriched CSV
+    over raw transactions.csv when it exists — running this tool makes every detector faster
+    and more accurate.
 
-    Returns:
-        A plain-text summary of the computed signal counts, used by preprocessing_agent
-        as its final response.
+    Data sources loaded (all read from config.DATASET_PATH):
+        transactions.csv – Raw transaction records.  Columns used: transaction_id, sender_id,
+                           recipient_id, recipient_iban, sender_iban, transaction_type, amount,
+                           location, timestamp, description, balance_after, payment_method.
+        users.json       – Citizen profiles.  Fields used: iban (key), salary (annual, EUR),
+                           first_name, last_name, residence {lat, lng, city}.
+        locations.json   – GPS biotag pings.  Fields used: biotag (= sender_id), timestamp,
+                           lat, lng, city.  Also used to derive city→(lat,lng) centroid map
+                           without any external geocoding API.
+        sms.json         – Incoming SMS messages.  Field used: "sms" (free text).
+        mails.json       – Incoming email messages.  Field used: "mail" (HTML / plain text).
 
-    When to call: call this exactly once, at the start of every pipeline run,
-    before any fraud detector tools are invoked.
+    Feature columns computed and added to every transaction row:
+
+        amount_vs_salary_ratio      (float | None)
+            tx.amount / (annual_salary / 12).  None when the sender's IBAN is not found
+            in users.json.  Primary input for detect_amount_anomalies (threshold: > 2×
+            monthly salary flags medium confidence; > 10× flags high alone).
+
+        time_since_last_tx_seconds  (float | None)
+            Seconds elapsed since the same sender's immediately preceding transaction,
+            sorted chronologically per sender.  None for a sender's first transaction.
+            Primary input for detect_temporal_anomalies (threshold: < 300 s = rapid-fire).
+
+        is_unusual_hour             (bool)
+            True when the transaction hour (UTC) is 00–05 (inclusive).  The Mirror Hacker
+            exploits late-night windows when victims are unlikely to notice real-time alerts.
+            Primary input for detect_temporal_anomalies.
+
+        is_new_recipient            (bool)
+            True when this is the first-ever transaction from this sender to this
+            recipient_iban / recipient_id, computed in strict chronological order.
+            Primary input for detect_new_recipient_anomalies (only flagged when amount
+            also exceeds 1× monthly salary to suppress low-value false positives).
+
+        is_new_recipient_country    (bool)
+            True when the recipient IBAN's 2-letter ISO country prefix has never appeared
+            in this sender's prior transaction history.  Supporting feature.
+
+        iban_country_mismatch       (bool)
+            True when sender and recipient IBAN country codes differ (e.g. sender "IT",
+            recipient "US").  Alone this is a weak signal (cross-border payments are common),
+            but it strongly corroborates GPS mismatches or new-recipient anomalies.
+            Primary input for detect_iban_country_anomalies.
+
+        velocity_burst_count        (int)
+            Count of transactions by the same sender in the 60-minute window immediately
+            preceding this transaction.  A burst ≥ 2 suggests automated fraud scripts
+            or a simultaneous device compromise.
+            Primary input for detect_velocity_burst.
+
+        gps_distance_to_tx_km       (float | None)
+            Haversine distance in km between the sender's GPS biotag ping closest in time
+            to this transaction and the centroid coordinates of the transaction's city.
+            City coordinates are derived from the GPS data itself (no external API).
+            None for transactions that are not in-person payments or withdrawals (transfers,
+            e-commerce, card — physical location is irrelevant for those).
+            Primary input for detect_location_anomalies (threshold: > 100 km; > 500 km
+            is high-confidence alone).
+
+        is_new_city_tx              (bool)
+            True when the transaction's location city is absent from the sender's entire
+            GPS biotag history (i.e. the user has never been to that city).  Applies only
+            to in-person payments and withdrawals; False otherwise.
+            Primary input for detect_withdrawal_anomalies.
+
+        has_impossible_travel       (bool)
+            True when any consecutive GPS ping pair for this sender implies a travel speed
+            exceeding 1 500 km/h (faster than any commercial aircraft), indicating the biotag
+            was cloned or the GPS data was spoofed — a known Mirror Hacker tactic.
+            Only transitions shorter than 2 hours are evaluated.
+            Primary input for detect_impossible_travel (always high confidence alone).
+
+        phishing_in_comms           (bool)
+            True when any SMS or email mentioning the sender (matched by first/last name
+            tokens longer than 2 characters) contains phishing keywords such as
+            "verify your account", "account blocked", "urgent action", "confirm your",
+            "login immediately", "security alert", "suspended".
+            Primary input for detect_phishing_victims.
+
+        suspicious_domain_in_comms  (bool)
+            True when the sender's communications contain lookalike domain patterns such as
+            "paypa1.com", "mirr0r", "micros0ft", digit-substituted domains, or hostnames
+            ending in "-secure.*" / "-alert.*".
+            Supporting input for detect_phishing_victims.
+
+        urgency_keywords_count      (int)
+            Count of urgency-related keywords in the sender's communications:
+            "urgent", "immediate", "act now", "suspended", "verify now", "account blocked",
+            "security alert", "within 24 hours", "asap".
+            Primary input for detect_urgency_signals (threshold: ≥ 2).
+
+        payment_link_in_comms       (bool)
+            True when the sender's emails or SMS contain URL patterns matching fake payment
+            portals: "https://…pay…", path "/pay", "click … pay", "pay … link".
+            Note: bare "invoice", "payment due", "fattura" are intentionally excluded
+            because they appear in legitimate utility billing emails.
+            Primary input for detect_urgency_signals.
+
+    Output:
+        Writes enriched_transactions.csv to config.WORKDIR_PATH.  The file preserves all
+        original transaction columns and appends the 14 feature columns listed above.
+        Returns a plain-text summary of per-feature signal counts across the full dataset,
+        which preprocessing_agent must return verbatim as its final response.
+
+    When to call:
+        Called exactly once by preprocessing_agent at the very start of the pipeline.
+        Do NOT call from pattern_agent, reflection_agent, decision_agent, or data_agent —
+        those agents run after preprocessing_agent has already produced the enriched CSV.
     """
     base    = Path(config.DATASET_PATH)
     workdir = Path(config.WORKDIR_PATH)
