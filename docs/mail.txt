@@ -1,0 +1,45 @@
+The Reply AI Agent Challenge is about to happen, and it is time for you to get ready. 
+
+We would like to remind you the agenda of the day, today March 12th:
+
+- 3:00 pm (CET) – Warm Up Live Streaming on Chick Norris TV to get ready with our AIvengers team who designed the challenge – if you’re registered to a Reply Office Hub too, go there on time to get the gadgets 😊
+- 3:30 pm (CET) – The Challenge problem and the datasets will be published on your Challenge Page, please have a look at the rules to discover how it will work this year with AI agents
+- 9:00 pm (CET) – The leaderboard will be frozen for a bit of suspense 
+- 9:15 pm (CET) – Closure Live Streaming
+- 9:30 pm (CET) – End of the challenge, the temporary leaderboard will be published
+
+ 
+A couple of things to remember to play:
+
+🔍 Langfuse Tracking - MANDATORY
+Langfuse is required for tracking and validation purposes. Every submission must include a valid Langfuse Session ID. Follow the detailed guide to set it up: API Guidelines. Make sure there are no spaces when you insert your session id and use the following host: https://challenges.reply.com/langfuse.
+
+🔓 Dataset Unlocking Mechanism
+At challenge start: Datasets 1-3 are available
+After submitting evaluation solutions for datasets 1-3: Datasets 4-5 unlock automatically
+ 
+
+📊 How Submissions Work: Training vs. Evaluation
+
+Training Datasets (1-5):
+Submit as many times as you want (while keeping track of your tokens - read below)
+Test and refine your agentic system
+Scores are estimates only and won't count toward your final ranking
+Use these to perfect your approach!
+Evaluation Datasets (1-5):
+
+ONE submission only per dataset
+Must include: output file + source code (.zip)
+Your final score is based ONLY on evaluation submissions
+Make sure to test thoroughly with training datasets first!
+⚠️ Key Point: Always test your solution on the training dataset before submitting to the evaluation dataset. You only get one chance for evaluation!
+
+ 
+
+🔑 API Keys & Token Budget
+
+Your token allocation is divided into two stages:
+
+$40 for datasets 1-3 (available at challenge start)
+$120 for datasets 4-5 (unlocked ONLY after you submit final evaluation solutions for datasets 1-3)
+On your challenge page you’ll see a dedicated widget showing your left tokens
