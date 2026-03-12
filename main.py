@@ -1,11 +1,18 @@
 """
 Entry point for running The Eye programmatically.
 Usage: python main.py --dataset "data/Brave New World_train/public" --output output/level1.txt
+
+A timestamped working folder is created under workdir/ for each run.
+The dataset is cloned there and all outputs (enriched CSV, predictions) live in that folder.
 """
 import asyncio
 import argparse
 import os
+import shutil
 import warnings
+from datetime import datetime
+from pathlib import Path
+
 warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
 from dotenv import load_dotenv
 
@@ -21,9 +28,31 @@ parser.add_argument("--dataset", default=None)
 parser.add_argument("--output", default=None)
 args = parser.parse_args()
 
-# Set global config BEFORE importing agents (tools read from config at call time)
+# Set initial paths from args / env
 from the_eye import config
 config.set_paths(args.dataset, args.output)
+
+# --- Create timestamped working folder ---
+# e.g.  workdir/Brave New World_train_20260312_143021/
+_dataset_dir = Path(config.DATASET_PATH)
+_level_name  = _dataset_dir.parent.name           # "Brave New World_train"
+_timestamp   = datetime.now().strftime("%Y%m%d_%H%M%S")
+workdir      = Path("workdir") / f"{_level_name}_{_timestamp}"
+workdir.mkdir(parents=True, exist_ok=True)
+
+# Clone the dataset into the working folder so all artefacts stay together
+_data_dst = workdir / "data"
+shutil.copytree(str(_dataset_dir), str(_data_dst))
+
+# Resolve output path: use explicit arg if given, otherwise put it inside workdir
+_output_path = config.OUTPUT_PATH or str(workdir / "predictions.txt")
+
+# Lock in the final paths for the whole run (must happen before importing agents)
+config.set_paths(
+    dataset_path=str(_data_dst),
+    output_path=_output_path,
+    workdir_path=str(workdir),
+)
 
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
@@ -45,8 +74,9 @@ async def run() -> None:
     )
 
     print(f"\n[The Eye] Starting analysis...")
-    print(f"[The Eye] Dataset: {config.DATASET_PATH}")
-    print(f"[The Eye] Output:  {config.OUTPUT_PATH}")
+    print(f"[The Eye] Dataset : {config.DATASET_PATH}")
+    print(f"[The Eye] Workdir : {config.WORKDIR_PATH}")
+    print(f"[The Eye] Output  : {config.OUTPUT_PATH}")
     print(f"[Langfuse] Session ID: {langfuse_session_id}\n")
 
     message = types.Content(
@@ -63,7 +93,7 @@ async def run() -> None:
         if event.is_final_response():
             final_text = "".join(p.text for p in event.content.parts if hasattr(p, "text"))
 
-    # Write predictions from final response (deterministic — does not rely on LLM tool call)
+    # Parse fraud IDs from the orchestrator's final response and write output file
     from the_eye.tools.output_writer import write_predictions, parse_fraud_ids_from_text
     import json as _json
     try:
@@ -74,6 +104,7 @@ async def run() -> None:
 
     result = write_predictions(fraud_ids, config.OUTPUT_PATH)
     print(f"\n[The Eye] {result}")
+    print(f"[The Eye] Run artefacts in: {workdir}")
 
     flush()
     print(f"\n[Submit this Session ID to Langfuse]: {get_session_id()}")
